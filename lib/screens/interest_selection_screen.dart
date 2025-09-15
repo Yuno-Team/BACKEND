@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'profile_input_screen.dart';
+import 'completion_screen.dart';
 
 class InterestSelectionScreen extends StatefulWidget {
+  final Map<String, String>? profileData;
+  
+  InterestSelectionScreen({this.profileData});
+
   @override
   _InterestSelectionScreenState createState() => _InterestSelectionScreenState();
 }
@@ -148,8 +152,9 @@ class _InterestSelectionScreenState extends State<InterestSelectionScreen> {
     if (selectedInterests.length >= 3) {
       Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (context) => ProfileInputScreen(
+          builder: (context) => CompletionScreen(
             selectedInterests: selectedInterests,
+            profileData: widget.profileData ?? {},
           ),
         ),
       );

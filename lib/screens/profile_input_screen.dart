@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'completion_screen.dart';
+import 'interest_selection_screen.dart';
 
 class ProfileInputScreen extends StatefulWidget {
-  final List<String> selectedInterests;
-  
-  ProfileInputScreen({required this.selectedInterests});
+  ProfileInputScreen();
 
   @override
   _ProfileInputScreenState createState() => _ProfileInputScreenState();
@@ -213,8 +211,7 @@ class _ProfileInputScreenState extends State<ProfileInputScreen> {
     if (_isFormValid) {
       Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (context) => CompletionScreen(
-            selectedInterests: widget.selectedInterests,
+          builder: (context) => InterestSelectionScreen(
             profileData: {
               'birthDate': _birthDateController.text,
               'region': _regionController.text,
