@@ -49,7 +49,7 @@ Yuno는 AI 기반으로 사용자에게 맞춤형 정책을 추천해주는 Flut
 
 ### 1. 프로젝트 클론
 ```bash
-git clone [repository-url]
+git clone https://github.com/Yuno-Team/FE.git
 cd yuno_app
 ```
 
