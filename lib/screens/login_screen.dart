@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'profile_input_screen.dart';
+import '../services/amplify_service.dart';
 
 class LoginScreen extends StatelessWidget {
   @override
@@ -143,8 +144,16 @@ class LoginScreen extends StatelessWidget {
   }
 
   void _handleKakaoLogin(BuildContext context) {
-    // TODO: 카카오 로그인 로직 구현
-    _navigateToNextScreen(context);
+    () async {
+      try {
+        await AmplifyService.instance.signInWithKakao();
+        _navigateToNextScreen(context);
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('카카오 로그인 실패: $e')),
+        );
+      }
+    }();
   }
 
   void _navigateToNextScreen(BuildContext context) {

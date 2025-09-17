@@ -18,6 +18,17 @@ Monorepo setup for Amplify + Flutter (Yuno)
 - This generates `lib/amplifyconfiguration.dart` (ignored by git).
 - The app uses Amplify packages declared in pubspec.yaml.
 
+Hosted UI notes (CLI restriction)
+- Amplify Gen 1 CLI enforces HTTPS callback URLs during the wizard; mobile deep links like `yuno://auth` are blocked there.
+- Workaround for dev: keep `http://localhost/` in the CLI config, then add your app deep links via Cognito console or overrides.
+- We preconfigured Hosted UI with domain `yuno-dev-social` and OAuth (code flow, openid/email/profile) in `amplify/backend/auth/*/cli-inputs.json`.
+
+Add deep links after push
+- Cognito console → User pools → App integration → App client → Hosted UI
+  - Callback URLs: `yuno://auth`, `http://localhost/`
+  - Sign-out URLs: `yuno://signout`, `http://localhost/`
+- Or use `amplify override auth` and set CallbackURLs/LogoutURLs in overrides to keep IaC.
+
 Free Tier guardrails
 - Region: ap-northeast-2 (Seoul)
 - DynamoDB: On-demand capacity
@@ -50,6 +61,13 @@ See `docs/schema.graphql` for a minimal starter.
 - Android: add intent-filter for scheme `yuno://auth`
 - iOS: add URL Types (CFBundleURLSchemes)
 - Update Cognito App client callback URLs to include the deep link
+Example: Android intent-filter
+<intent-filter>
+  <action android:name="android.intent.action.VIEW" />
+  <category android:name="android.intent.category.DEFAULT" />
+  <category android:name="android.intent.category.BROWSABLE" />
+  <data android:scheme="yuno" android:host="auth" />
+</intent-filter>
 
 8) Social (Naver/Kakao via OIDC)
 - Register OIDC app on each provider

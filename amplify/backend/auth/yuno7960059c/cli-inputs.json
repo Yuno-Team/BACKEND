@@ -37,6 +37,9 @@
     "resourceName": "yuno7960059c",
     "authSelections": "identityPoolAndUserPool",
     "useDefault": "default",
+    "hostedUI": true,
+    "hostedUIDomainName": "yuno-dev-social",
+    "oAuthMetadata": "{\"AllowedOAuthFlows\":[\"code\"],\"AllowedOAuthScopes\":[\"email\",\"openid\",\"profile\"],\"CallbackURLs\":[\"http://localhost/\"],\"LogoutURLs\":[\"http://localhost/\"],\"SupportedIdentityProviders\":[\"COGNITO\"]}",
     "usernameAttributes": [
       "email"
     ],
