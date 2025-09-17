@@ -63,6 +63,26 @@ flutter pub get
 flutter run
 ```
 
+## 🧩 백엔드(Amplify) 모노레포
+
+- 이 레포 루트에 AWS Amplify 백엔드를 함께 관리합니다.
+- 셋업 가이드는 `docs/amplify-monorepo-setup.md` 참고.
+
+핵심 명령 요약:
+
+```bash
+# 1) 초기화 및 리소스 추가
+amplify init
+amplify add auth
+amplify add api
+amplify push
+
+# 2) Flutter 연결 (앱 설정 생성)
+amplify pull --appId <APP_ID> --envName dev
+
+# 생성된 lib/amplifyconfiguration.dart 사용해 앱에서 초기화
+```
+
 ## 📦 주요 패키지
 
 ```yaml
@@ -75,6 +95,10 @@ dependencies:
   http: ^1.1.0            # API 통신
   shared_preferences: ^2.2.2  # 로컬 저장
   url_launcher: ^6.2.2    # URL 실행
+  amplify_flutter: ^1.6.2       # Amplify Core
+  amplify_auth_cognito: ^1.6.2  # Cognito Auth
+  amplify_api: ^1.6.2           # GraphQL/API
+  amplify_storage_s3: ^1.6.2    # S3 Storage
 ```
 
 ## 🎨 디자인 시스템
