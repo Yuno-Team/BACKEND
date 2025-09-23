@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'profile_input_screen.dart';
 import '../services/auth_service.dart';
 
@@ -77,8 +77,8 @@ class LoginScreen extends StatelessWidget {
                     onTap: () => _handleKakaoLogin(context),
                   ),
 
-                  // Apple 로그인 버튼 (iOS만)
-                  if (Platform.isIOS) ...[
+                  // Apple 로그인 버튼 (iOS만 표시)
+                  if (!kIsWeb) ...[
                     SizedBox(height: 8),
                     _buildSocialLoginButton(
                       iconPath: 'assets/icons/apple.svg',

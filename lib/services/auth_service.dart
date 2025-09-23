@@ -2,8 +2,9 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:kakao_flutter_sdk/kakao_flutter_sdk.dart' as kakao;
 import 'package:flutter_naver_login/flutter_naver_login.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
-import 'dart:io';
+import 'package:flutter/foundation.dart';
 import '../models/user.dart';
+import '../config/app_config.dart';
 import 'api_service.dart';
 
 class AuthService {
@@ -19,6 +20,11 @@ class AuthService {
 
   Future<void> initialize() async {
     _apiService.initialize();
+
+    // Initialize Kakao SDK (required before using Kakao APIs)
+    try {
+      kakao.KakaoSdk.init(nativeAppKey: AppConfig.kakaoNativeAppKey);
+    } catch (_) {}
 
     // Load current user if authenticated
     if (_apiService.isAuthenticated) {
@@ -37,7 +43,7 @@ class AuthService {
       final String? accessToken = auth.accessToken;
       final String? idToken = auth.idToken;
 
-      if (accessToken == null) return false;
+      if (accessToken == null && idToken == null) return false;
 
       _currentUser = await _apiService.socialLogin(
         provider: 'google',
@@ -96,7 +102,7 @@ class AuthService {
 
   Future<bool> signInWithApple() async {
     try {
-      if (!Platform.isIOS) return false;
+      if (kIsWeb) return false;
 
       final credential = await SignInWithApple.getAppleIDCredential(
         scopes: [

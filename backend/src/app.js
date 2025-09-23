@@ -19,13 +19,16 @@ app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" }
 }));
 
-// CORS 설정
-app.use(cors({
+// CORS 설정 (Express에서만 처리)
+const corsOptions = {
   origin: process.env.NODE_ENV === 'production'
     ? ['https://yuno.app', 'https://www.yuno.app']
     : ['http://localhost:3000', 'http://localhost:8080'],
   credentials: true
-}));
+};
+app.use(cors(corsOptions));
+// Preflight for all routes
+app.options('*', cors(corsOptions));
 
 // 압축
 app.use(compression());

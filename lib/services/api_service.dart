@@ -104,13 +104,13 @@ class ApiService {
   // Auth
   Future<app_models.User?> socialLogin({
     required String provider,
-    required String accessToken,
+    String? accessToken,
     String? idToken,
   }) async {
     try {
       final resp = await _dio.post('/auth/social-login', data: {
         'provider': provider,
-        'accessToken': accessToken,
+        if (accessToken != null) 'accessToken': accessToken,
         if (idToken != null) 'idToken': idToken,
       });
       if (resp.statusCode == 200) {
@@ -288,4 +288,3 @@ class ApiService {
 
   bool get isAuthenticated => _accessToken != null;
 }
-
