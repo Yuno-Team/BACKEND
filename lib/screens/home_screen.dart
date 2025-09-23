@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../services/policy_service.dart';
+import '../models/policy.dart';
 
 class HomeScreen extends StatefulWidget {
   final List<String> selectedInterests;
@@ -16,6 +18,48 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
+  final PolicyService _policyService = PolicyService();
+
+  List<Policy> _recommendedPolicies = [];
+  List<Policy> _popularPolicies = [];
+  List<Policy> _deadlinePolicies = [];
+  bool _isLoading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPolicyData();
+  }
+
+  Future<void> _loadPolicyData() async {
+    try {
+      setState(() {
+        _isLoading = true;
+        _error = null;
+      });
+
+      // 병렬로 API 호출
+      final results = await Future.wait([
+        _policyService.getRecommendedPolicies(interests: widget.selectedInterests),
+        _policyService.getPopularPolicies(),
+        _policyService.getUpcomingDeadlines(),
+      ]);
+
+      setState(() {
+        _recommendedPolicies = results[0];
+        _popularPolicies = results[1];
+        _deadlinePolicies = results[2];
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _error = 'API 데이터를 불러오는데 실패했습니다: $e';
+        _isLoading = false;
+      });
+      print('Policy data loading error: $e');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -66,21 +110,37 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                     
                     SizedBox(height: 16),
-                    
+
                     // 추천 정책 카드들
-                    _buildPolicyCard(
-                      title: '정책명',
-                      category: '카테고리',
-                      status: '신청 일자',
-                    ),
-                    
-                    SizedBox(height: 12),
-                    
-                    _buildPolicyCard(
-                      title: '정책명',
-                      category: '카테고리',
-                      status: '신청 일자',
-                    ),
+                    if (_isLoading)
+                      Center(child: CircularProgressIndicator())
+                    else if (_error != null)
+                      Text(
+                        _error!,
+                        style: GoogleFonts.notoSans(
+                          fontSize: 14,
+                          color: Colors.red,
+                        ),
+                      )
+                    else if (_recommendedPolicies.isEmpty)
+                      Text(
+                        '추천 정책이 없습니다.',
+                        style: GoogleFonts.notoSans(
+                          fontSize: 14,
+                          color: Colors.grey[600],
+                        ),
+                      )
+                    else
+                      ...(_recommendedPolicies.take(2).map((policy) =>
+                        Padding(
+                          padding: EdgeInsets.only(bottom: 12),
+                          child: _buildPolicyCard(
+                            title: policy.title,
+                            category: policy.category,
+                            status: policy.applicationPeriod,
+                          ),
+                        )
+                      ).toList()),
                     
                     SizedBox(height: 16),
                     
@@ -148,11 +208,30 @@ class _HomeScreenState extends State<HomeScreen> {
                   SizedBox(height: 20),
                   
                   // TOP3 정책 카드들
-                  _buildTopPolicyCard('정책명', '카테고리', '신청 일자', '저장 수'),
-                  SizedBox(height: 12),
-                  _buildTopPolicyCard('정책명', '카테고리', '신청 일자', '저장 수'),
-                  SizedBox(height: 12),
-                  _buildTopPolicyCard('정책명', '카테고리', '신청 일자', '저장 수'),
+                  if (_isLoading)
+                    Center(child: CircularProgressIndicator())
+                  else if (_popularPolicies.isEmpty)
+                    Text(
+                      '인기 정책이 없습니다.',
+                      style: GoogleFonts.notoSans(
+                        fontSize: 14,
+                        color: Colors.grey[600],
+                      ),
+                    )
+                  else
+                    ...(_popularPolicies.take(3).asMap().entries.map((entry) {
+                      int index = entry.key;
+                      Policy policy = entry.value;
+                      return Padding(
+                        padding: EdgeInsets.only(bottom: 12),
+                        child: _buildTopPolicyCard(
+                          policy.title,
+                          policy.category,
+                          policy.applicationPeriod,
+                          '${index + 1}위',
+                        ),
+                      );
+                    }).toList()),
                 ],
               ),
               
@@ -188,11 +267,27 @@ class _HomeScreenState extends State<HomeScreen> {
                   SizedBox(height: 20),
                   
                   // 마감 임박 정책 카드들
-                  _buildUpcomingCard('정책명', '신청 마감/신청 시작', '일자'),
-                  SizedBox(height: 12),
-                  _buildUpcomingCard('정책명', '자료 제출 마감', '일자'),
-                  SizedBox(height: 12),
-                  _buildUpcomingCard('정책명', '설명회 참석', '일자'),
+                  if (_isLoading)
+                    Center(child: CircularProgressIndicator())
+                  else if (_deadlinePolicies.isEmpty)
+                    Text(
+                      '마감 임박 정책이 없습니다.',
+                      style: GoogleFonts.notoSans(
+                        fontSize: 14,
+                        color: Colors.grey[600],
+                      ),
+                    )
+                  else
+                    ...(_deadlinePolicies.take(3).map((policy) =>
+                      Padding(
+                        padding: EdgeInsets.only(bottom: 12),
+                        child: _buildUpcomingCard(
+                          policy.title,
+                          '신청 마감',
+                          policy.applicationPeriod,
+                        ),
+                      )
+                    ).toList()),
                 ],
               ),
             ],

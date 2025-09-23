@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter/foundation.dart';
 import 'profile_input_screen.dart';
+import 'home_screen.dart';
 import '../services/auth_service.dart';
 
 class LoginScreen extends StatelessWidget {
@@ -94,6 +95,22 @@ class LoginScreen extends StatelessWidget {
               ),
               
               SizedBox(height: 80),
+
+              // 개발용 스킵 버튼 (디버그 모드에서만 표시)
+              if (kDebugMode) ...[
+                SizedBox(height: 20),
+                TextButton(
+                  onPressed: () => _skipToHome(context),
+                  child: Text(
+                    '🚀 개발용: 홈화면으로 스킵',
+                    style: GoogleFonts.notoSans(
+                      fontSize: 14,
+                      color: Colors.grey,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -212,6 +229,23 @@ class LoginScreen extends StatelessWidget {
   void _navigateToNextScreen(BuildContext context) {
     Navigator.of(context).push(
       MaterialPageRoute(builder: (context) => ProfileInputScreen()),
+    );
+  }
+
+  void _skipToHome(BuildContext context) {
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        builder: (context) => HomeScreen(
+          selectedInterests: ['장학금', '정부지원사업', '대외활동'], // 기본 관심사
+          profileData: {
+            'birthDate': '2000-01-01',
+            'region': '서울',
+            'school': '개발대학교',
+            'education': '대학생',
+            'major': '컴퓨터공학',
+          },
+        ),
+      ),
     );
   }
 }

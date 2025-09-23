@@ -30,72 +30,347 @@ class OntongService {
   }
 
   /**
-   * 정책 목록 조회
+   * 정책 목록 조회 (데이터베이스 우선)
    */
   async getPolicies(params = {}) {
+    const {
+      page = 1,
+      limit = 20,
+      category,
+      region,
+      searchText,
+      ageMin,
+      ageMax
+    } = params;
+
     try {
-      const {
-        page = 1,
-        limit = 20,
-        category,
-        region,
-        searchText,
-        ageMin,
-        ageMax
-      } = params;
+      // 1단계: 데이터베이스에서 조회
+      const dbResult = await this.getPoliciesFromDB(params);
 
-      // 온통청년 API 파라미터 구성
-      const apiParams = {
-        openApiVlak: this.apiKey,
-        display: limit,
-        pageIndex: page,
-        ...(category && { bizTycdSel: this.mapCategoryToCode(category) }),
-        ...(region && { srchPolicyRegion: region }),
-        ...(searchText && { query: searchText })
-      };
-
-      const response = await this.client.get('/youthPolicy.json', {
-        params: apiParams
-      });
-
-      const policies = this.transformPolicies(response.data);
-
-      // 나이 필터링 (클라이언트 사이드)
-      let filteredPolicies = policies;
-      if (ageMin || ageMax) {
-        filteredPolicies = policies.filter(policy => {
-          if (!policy.target_age) return true;
-
-          const policyAgeMin = policy.target_age.min || 0;
-          const policyAgeMax = policy.target_age.max || 100;
-
-          if (ageMin && ageMax) {
-            return !(policyAgeMax < ageMin || policyAgeMin > ageMax);
-          } else if (ageMin) {
-            return policyAgeMax >= ageMin;
-          } else if (ageMax) {
-            return policyAgeMin <= ageMax;
-          }
-
-          return true;
-        });
+      // 데이터가 충분하고 최신이면 반환
+      if (dbResult.policies.length > 0 && this.isDataFresh(dbResult.lastCached)) {
+        console.log(`[DB] 정책 조회 성공: ${dbResult.policies.length}개 (페이지 ${page})`);
+        return dbResult;
       }
 
-      return {
-        policies: filteredPolicies,
-        pagination: {
-          page,
-          limit,
-          total: response.data.totalCount || 0,
-          hasNext: filteredPolicies.length === limit
-        }
-      };
+      // 2단계: 데이터가 부족하거나 오래된 경우 API 호출 후 캐시 업데이트
+      console.log('[API] 정책 데이터 갱신 필요, 온통청년 API 호출...');
+
+      try {
+        const apiResult = await this.getPoliciesFromAPI(params);
+
+        // API 데이터를 데이터베이스에 저장 (백그라운드)
+        this.updateCacheInBackground(apiResult.policies, category);
+
+        return apiResult;
+      } catch (apiError) {
+        console.error('온통청년 API 호출 실패, 캐시된 데이터 반환:', apiError.message);
+
+        // API 실패시 오래된 캐시라도 반환
+        return dbResult.policies.length > 0 ? dbResult : {
+          policies: [],
+          pagination: { page, limit, total: 0, hasNext: false }
+        };
+      }
 
     } catch (error) {
-      console.error('온통청년 API 조회 실패:', error);
+      console.error('정책 조회 중 오류:', error);
 
-      // API 실패시 캐시된 데이터 반환
-      return await this.getCachedPolicies(params);
+      // 모든 것이 실패하면 빈 결과 반환
+      return {
+        policies: [],
+        pagination: { page, limit, total: 0, hasNext: false }
+      };
+    }
+  }
+
+  /**
+   * 데이터베이스에서 정책 조회
+   */
+  async getPoliciesFromDB(params) {
+    const {
+      page = 1,
+      limit = 20,
+      category,
+      region,
+      searchText,
+      ageMin,
+      ageMax
+    } = params;
+
+    const offset = (page - 1) * limit;
+    const conditions = ['status = $1'];
+    const values = ['active'];
+    let paramIndex = 2;
+
+    // 조건 추가
+    if (category) {
+      conditions.push(`category = $${paramIndex}`);
+      values.push(category);
+      paramIndex++;
+    }
+
+    if (searchText) {
+      conditions.push(`(title ILIKE $${paramIndex} OR description ILIKE $${paramIndex})`);
+      values.push(`%${searchText}%`);
+      paramIndex++;
+    }
+
+    if (region) {
+      conditions.push(`region @> $${paramIndex}`);
+      values.push(JSON.stringify([region]));
+      paramIndex++;
+    }
+
+    if (ageMin || ageMax) {
+      if (ageMin && ageMax) {
+        conditions.push(`(target_age->>'min')::int <= $${paramIndex} AND (target_age->>'max')::int >= $${paramIndex + 1}`);
+        values.push(ageMax, ageMin);
+        paramIndex += 2;
+      } else if (ageMin) {
+        conditions.push(`(target_age->>'max')::int >= $${paramIndex}`);
+        values.push(ageMin);
+        paramIndex++;
+      } else if (ageMax) {
+        conditions.push(`(target_age->>'min')::int <= $${paramIndex}`);
+        values.push(ageMax);
+        paramIndex++;
+      }
+    }
+
+    const whereClause = conditions.join(' AND ');
+
+    // 총 개수 조회
+    const countQuery = `SELECT COUNT(*) as total FROM policies WHERE ${whereClause}`;
+    const countResult = await db.query(countQuery, values);
+    const total = parseInt(countResult.rows[0].total);
+
+    // 정책 목록 조회
+    const query = `
+      SELECT id, title, category, description, content, deadline, start_date, end_date,
+             application_url, contact_info, requirements, benefits, documents, region,
+             target_age, target_education, tags, image_url, status, view_count,
+             popularity_score, cached_at, updated_at
+      FROM policies
+      WHERE ${whereClause}
+      ORDER BY popularity_score DESC, updated_at DESC
+      LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+    `;
+
+    values.push(limit, offset);
+    const result = await db.query(query, values);
+
+    return {
+      policies: result.rows.map(row => this.transformDBPolicy(row)),
+      pagination: {
+        page,
+        limit,
+        total,
+        hasNext: offset + limit < total
+      },
+      lastCached: result.rows.length > 0 ? result.rows[0].cached_at : null
+    };
+  }
+
+  /**
+   * 온통청년 API에서 정책 조회 (기존 방식)
+   */
+  async getPoliciesFromAPI(params) {
+    const {
+      page = 1,
+      limit = 20,
+      category,
+      region,
+      searchText,
+      ageMin,
+      ageMax
+    } = params;
+
+    // 온통청년 API 파라미터 구성
+    const apiParams = {
+      openApiVlak: this.apiKey,
+      display: limit,
+      pageIndex: page,
+      ...(category && { bizTycdSel: this.mapCategoryToCode(category) }),
+      ...(region && { srchPolicyRegion: region }),
+      ...(searchText && { query: searchText })
+    };
+
+    const response = await this.client.get('/youthPolicy.json', {
+      params: apiParams
+    });
+
+    const policies = this.transformPolicies(response.data);
+
+    // 나이 필터링 (클라이언트 사이드)
+    let filteredPolicies = policies;
+    if (ageMin || ageMax) {
+      filteredPolicies = policies.filter(policy => {
+        if (!policy.target_age) return true;
+
+        const policyAgeMin = policy.target_age.min || 0;
+        const policyAgeMax = policy.target_age.max || 100;
+
+        if (ageMin && ageMax) {
+          return !(policyAgeMax < ageMin || policyAgeMin > ageMax);
+        } else if (ageMin) {
+          return policyAgeMax >= ageMin;
+        } else if (ageMax) {
+          return policyAgeMin <= ageMax;
+        }
+
+        return true;
+      });
+    }
+
+    return {
+      policies: filteredPolicies,
+      pagination: {
+        page,
+        limit,
+        total: response.data.totalCount || 0,
+        hasNext: filteredPolicies.length === limit
+      }
+    };
+  }
+
+  /**
+   * 데이터 신선도 확인 (6시간 이내면 신선함)
+   */
+  isDataFresh(cachedAt) {
+    if (!cachedAt) return false;
+
+    const now = new Date();
+    const cached = new Date(cachedAt);
+    const hoursDiff = (now - cached) / (1000 * 60 * 60);
+
+    return hoursDiff < 6; // 6시간 이내면 신선함
+  }
+
+  /**
+   * 데이터베이스 정책을 API 형식으로 변환
+   */
+  transformDBPolicy(row) {
+    return {
+      id: row.id,
+      title: row.title,
+      category: row.category,
+      description: row.description,
+      content: row.content,
+      deadline: row.deadline,
+      applicationPeriod: this.formatDateRange(row.start_date, row.end_date),
+      applicationUrl: row.application_url,
+      contactInfo: row.contact_info,
+      requirements: row.requirements,
+      benefits: row.benefits,
+      documents: row.documents,
+      region: row.region,
+      targetAge: row.target_age,
+      targetEducation: row.target_education,
+      tags: row.tags,
+      imageUrl: row.image_url,
+      status: row.status,
+      viewCount: row.view_count || 0,
+      popularityScore: parseFloat(row.popularity_score) || 0,
+      updatedAt: row.updated_at
+    };
+  }
+
+  /**
+   * 날짜 범위 포맷팅
+   */
+  formatDateRange(startDate, endDate) {
+    if (!startDate && !endDate) return '-';
+
+    const formatDate = (date) => {
+      if (!date) return '';
+      return new Date(date).toLocaleDateString('ko-KR');
+    };
+
+    const start = formatDate(startDate);
+    const end = formatDate(endDate);
+
+    if (start && end) {
+      return `${start} ~ ${end}`;
+    } else if (start) {
+      return `${start} ~`;
+    } else if (end) {
+      return `~ ${end}`;
+    }
+
+    return '-';
+  }
+
+  /**
+   * 백그라운드에서 캐시 업데이트
+   */
+  updateCacheInBackground(policies, category) {
+    // 비동기로 처리하여 응답 지연 방지
+    setImmediate(async () => {
+      try {
+        console.log(`[CACHE] 백그라운드 캐시 업데이트 시작: ${policies.length}개 정책`);
+
+        for (const policy of policies) {
+          await this.upsertPolicyToCache(policy);
+        }
+
+        console.log(`[CACHE] 백그라운드 캐시 업데이트 완료`);
+      } catch (error) {
+        console.error('[CACHE] 백그라운드 캐시 업데이트 실패:', error);
+      }
+    });
+  }
+
+  /**
+   * 단일 정책을 캐시에 저장/업데이트
+   */
+  async upsertPolicyToCache(policy) {
+    const checkQuery = 'SELECT id FROM policies WHERE id = $1';
+    const existing = await db.query(checkQuery, [policy.id]);
+
+    if (existing.rows.length > 0) {
+      // 업데이트
+      const updateQuery = `
+        UPDATE policies SET
+          title = $2, category = $3, description = $4, content = $5,
+          deadline = $6, start_date = $7, end_date = $8, application_url = $9,
+          contact_info = $10, requirements = $11, benefits = $12, documents = $13,
+          region = $14, target_age = $15, target_education = $16, tags = $17,
+          image_url = $18, status = $19, cached_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1
+      `;
+
+      await db.query(updateQuery, [
+        policy.id, policy.title, policy.category, policy.description, policy.content,
+        policy.deadline, policy.startDate, policy.endDate, policy.applicationUrl,
+        JSON.stringify(policy.contactInfo), JSON.stringify(policy.requirements),
+        JSON.stringify(policy.benefits), JSON.stringify(policy.documents),
+        JSON.stringify(policy.region), JSON.stringify(policy.targetAge),
+        JSON.stringify(policy.targetEducation), JSON.stringify(policy.tags),
+        policy.imageUrl, 'active'
+      ]);
+    } else {
+      // 삽입
+      const insertQuery = `
+        INSERT INTO policies (
+          id, title, category, description, content, deadline, start_date, end_date,
+          application_url, contact_info, requirements, benefits, documents, region,
+          target_age, target_education, tags, image_url, status, cached_at, updated_at
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19,
+          CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+        )
+      `;
+
+      await db.query(insertQuery, [
+        policy.id, policy.title, policy.category, policy.description, policy.content,
+        policy.deadline, policy.startDate, policy.endDate, policy.applicationUrl,
+        JSON.stringify(policy.contactInfo), JSON.stringify(policy.requirements),
+        JSON.stringify(policy.benefits), JSON.stringify(policy.documents),
+        JSON.stringify(policy.region), JSON.stringify(policy.targetAge),
+        JSON.stringify(policy.targetEducation), JSON.stringify(policy.tags),
+        policy.imageUrl, 'active'
+      ]);
     }
   }
 
