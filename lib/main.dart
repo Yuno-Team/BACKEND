@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:kakao_flutter_sdk/kakao_flutter_sdk.dart';
+import 'package:device_preview/device_preview.dart';
 import 'screens/splash_screen.dart';
 import 'services/auth_service.dart';
 import 'config/app_config.dart';
@@ -16,13 +18,21 @@ void main() async {
   // Initialize auth service
   await AuthService().initialize();
 
-  runApp(MyApp());
+  runApp(
+    DevicePreview(
+      enabled: kIsWeb && kDebugMode,
+      builder: (context) => MyApp(),
+    ),
+  );
 }
 
 class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      useInheritedMediaQuery: true,
+      locale: DevicePreview.locale(context),
+      builder: DevicePreview.appBuilder,
       title: 'Yuno',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
