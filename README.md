@@ -8,7 +8,7 @@ Yuno는 AI 기반으로 사용자에게 맞춤형 정책을 추천해주는 Flut
 
 ### 1. 사용자 온보딩
 - **스플래시 화면**: Yuno 브랜딩과 로딩 애니메이션
-- **소셜 로그인**: Google, Naver, Kakao 로그인 지원
+- **소셜 로그인**: Google, Naver, Kakao, Apple 로그인 지원
 - **관심 분야 선택**: 7개 카테고리 중 3개 이상 선택
 - **프로필 정보 입력**: 개인정보 및 학력 정보 입력
 
@@ -33,7 +33,10 @@ Yuno는 AI 기반으로 사용자에게 맞춤형 정책을 추천해주는 Flut
 - **Language**: Dart
 - **State Management**: Provider
 - **UI/UX**: Google Fonts, Material Design
-- **Authentication**: 소셜 로그인 (Google, Naver, Kakao)
+- **Authentication**: 소셜 로그인 (Google, Naver, Kakao, Apple)
+- **Backend**: EC2 + Docker (PostgreSQL, Node.js, Nginx)
+- **API**: REST API with JWT authentication
+- **HTTP Client**: Dio with interceptors
 - **Storage**: SharedPreferences
 
 ## 📱 화면 구성
@@ -63,25 +66,20 @@ flutter pub get
 flutter run
 ```
 
-## 🧩 백엔드(Amplify) 모노레포
+## 🧩 백엔드(EC2) 아키텍처
 
-- 이 레포 루트에 AWS Amplify 백엔드를 함께 관리합니다.
-- 셋업 가이드는 `docs/amplify-monorepo-setup.md` 참고.
+- **Backend URL**: `http://52.79.251.242/api`
+- **Infrastructure**: AWS EC2 t3.medium + Docker
+- **Database**: PostgreSQL
+- **Authentication**: JWT with refresh tokens
+- **External APIs**: Ontong Youth Policy API
 
-핵심 명령 요약:
-
-```bash
-# 1) 초기화 및 리소스 추가
-amplify init
-amplify add auth
-amplify add api
-amplify push
-
-# 2) Flutter 연결 (앱 설정 생성)
-amplify pull --appId <APP_ID> --envName dev
-
-# 생성된 lib/amplifyconfiguration.dart 사용해 앱에서 초기화
-```
+주요 기능:
+- 소셜 로그인 (Google, Kakao, Naver, Apple)
+- 사용자 프로필 관리
+- AI 기반 정책 추천
+- 정책 북마크 및 상호작용 추적
+- 자동 토큰 갱신 및 에러 핸들링
 
 ## 📦 주요 패키지
 
@@ -89,16 +87,16 @@ amplify pull --appId <APP_ID> --envName dev
 dependencies:
   flutter:
     sdk: flutter
-  google_fonts: ^6.1.0    # 폰트
-  flutter_svg: ^2.0.9     # SVG 아이콘
-  provider: ^6.1.1        # 상태 관리
-  http: ^1.1.0            # API 통신
-  shared_preferences: ^2.2.2  # 로컬 저장
-  url_launcher: ^6.2.2    # URL 실행
-  amplify_flutter: ^1.6.2       # Amplify Core
-  amplify_auth_cognito: ^1.6.2  # Cognito Auth
-  amplify_api: ^1.6.2           # GraphQL/API
-  amplify_storage_s3: ^1.6.2    # S3 Storage
+  google_fonts: ^6.1.0           # 폰트
+  flutter_svg: ^2.0.9            # SVG 아이콘
+  provider: ^6.1.1               # 상태 관리
+  dio: ^5.4.0                    # HTTP 클라이언트
+  shared_preferences: ^2.2.2     # 로컬 저장
+  url_launcher: ^6.2.2           # URL 실행
+  google_sign_in: ^6.1.5         # Google 로그인
+  kakao_flutter_sdk: ^1.7.0      # Kakao 로그인
+  flutter_naver_login: ^1.8.0    # Naver 로그인
+  sign_in_with_apple: ^5.0.0     # Apple 로그인
 ```
 
 ## 🎨 디자인 시스템
@@ -123,6 +121,8 @@ dependencies:
 ```
 lib/
 ├── main.dart
+├── config/
+│   └── app_config.dart
 ├── screens/
 │   ├── splash_screen.dart
 │   ├── login_screen.dart
@@ -134,6 +134,7 @@ lib/
 │   ├── user.dart
 │   └── policy.dart
 ├── services/
+│   ├── api_service.dart
 │   ├── auth_service.dart
 │   └── policy_service.dart
 ├── widgets/
@@ -142,12 +143,13 @@ lib/
 
 ## 🔮 향후 개발 계획
 
-1. **API 연동**: 실제 정책 데이터 API 연결
-2. **소셜 로그인**: 실제 소셜 로그인 SDK 연동
-3. **알림 기능**: 마감 임박 정책 푸시 알림
-4. **즐겨찾기**: 정책 북마크 및 관리
-5. **상세 화면**: 정책 상세 정보 화면
-6. **검색 고도화**: 필터 및 정렬 기능
+1. ✅ **API 연동**: EC2 백엔드 + Ontong 정책 API 연결 완료
+2. ✅ **소셜 로그인**: Google, Kakao, Naver, Apple SDK 연동 완료
+3. ✅ **즐겨찾기**: 정책 북마크 및 상호작용 추적 완료
+4. **알림 기능**: 마감 임박 정책 푸시 알림
+5. **상세 화면**: 정책 상세 정보 화면 개선
+6. **검색 고도화**: 필터 및 정렬 기능 확장
+7. **앱 배포**: Google Play Store, App Store 출시
 
 ## 📄 라이선스
 
