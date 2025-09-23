@@ -23,20 +23,30 @@ class User {
     required this.createdAt,
   });
 
+  static DateTime? _parseDate(dynamic v) {
+    if (v == null) return null;
+    if (v is String) {
+      try { return DateTime.parse(v); } catch (_) { return null; }
+    }
+    return null;
+  }
+
   factory User.fromJson(Map<String, dynamic> json) {
+    final birth = json['birth_date'] ?? json['birthDate'];
+    final created = json['created_at'] ?? json['createdAt'];
     return User(
-      id: json['id'],
-      email: json['email'],
-      name: json['name'],
-      birthDate: json['birthDate'] != null 
-          ? DateTime.parse(json['birthDate']) 
-          : null,
-      region: json['region'],
-      school: json['school'],
-      education: json['education'],
-      major: json['major'],
-      interests: List<String>.from(json['interests'] ?? []),
-      createdAt: DateTime.parse(json['createdAt']),
+      id: (json['id'] ?? json['uuid'] ?? '').toString(),
+      email: (json['email'] ?? '').toString(),
+      name: (json['name'] ?? '').toString(),
+      birthDate: _parseDate(birth),
+      region: json['region']?.toString(),
+      school: json['school']?.toString(),
+      education: json['education']?.toString(),
+      major: json['major']?.toString(),
+      interests: (json['interests'] is List)
+          ? List<String>.from(json['interests'] as List)
+          : const [],
+      createdAt: _parseDate(created) ?? DateTime.now(),
     );
   }
 

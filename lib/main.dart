@@ -1,9 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:provider/provider.dart';
+import 'package:kakao_flutter_sdk/kakao_flutter_sdk.dart';
 import 'screens/splash_screen.dart';
+import 'services/auth_service.dart';
+import 'config/app_config.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize Kakao SDK
+  KakaoSdk.init(
+    nativeAppKey: AppConfig.kakaoNativeAppKey,
+  );
+
+  // Initialize auth service
+  await AuthService().initialize();
+
   runApp(MyApp());
 }
 

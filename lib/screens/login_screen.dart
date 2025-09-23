@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'dart:io';
 import 'profile_input_screen.dart';
-import '../services/amplify_service.dart';
+import '../services/auth_service.dart';
 
 class LoginScreen extends StatelessWidget {
   @override
@@ -53,9 +54,9 @@ class LoginScreen extends StatelessWidget {
                     borderColor: Color(0xFFEBEBEB),
                     onTap: () => _handleGoogleLogin(context),
                   ),
-                  
+
                   SizedBox(height: 8),
-                  
+
                   // 네이버 로그인 버튼
                   _buildSocialLoginButton(
                     iconPath: 'assets/icons/naver.svg',
@@ -64,9 +65,9 @@ class LoginScreen extends StatelessWidget {
                     textColor: Colors.white,
                     onTap: () => _handleNaverLogin(context),
                   ),
-                  
+
                   SizedBox(height: 8),
-                  
+
                   // 카카오 로그인 버튼
                   _buildSocialLoginButton(
                     iconPath: 'assets/icons/kakao.svg',
@@ -75,6 +76,20 @@ class LoginScreen extends StatelessWidget {
                     textColor: Color(0xFF371C1D),
                     onTap: () => _handleKakaoLogin(context),
                   ),
+
+                  // Apple 로그인 버튼 (iOS만)
+                  if (Platform.isIOS) ...[
+                    SizedBox(height: 8),
+                    _buildSocialLoginButton(
+                      iconPath: 'assets/icons/apple.svg',
+                      text: 'Apple로 로그인 하기',
+                      backgroundColor: Colors.black,
+                      textColor: Colors.white,
+                      borderColor: Colors.white,
+                      onTap: () => _handleAppleLogin(context),
+                    ),
+                  ],
+
                 ],
               ),
               
@@ -133,27 +148,65 @@ class LoginScreen extends StatelessWidget {
     );
   }
 
-  void _handleGoogleLogin(BuildContext context) {
-    // TODO: 구글 로그인 로직 구현
-    _navigateToNextScreen(context);
-  }
-
-  void _handleNaverLogin(BuildContext context) {
-    // TODO: 네이버 로그인 로직 구현
-    _navigateToNextScreen(context);
-  }
-
-  void _handleKakaoLogin(BuildContext context) {
-    () async {
-      try {
-        await AmplifyService.instance.signInWithKakao();
+  void _handleGoogleLogin(BuildContext context) async {
+    try {
+      final success = await AuthService().signInWithGoogle();
+      if (success) {
         _navigateToNextScreen(context);
-      } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('카카오 로그인 실패: $e')),
-        );
+      } else {
+        _showErrorMessage(context, '구글 로그인에 실패했습니다.');
       }
-    }();
+    } catch (e) {
+      _showErrorMessage(context, '구글 로그인 중 오류가 발생했습니다.');
+    }
+  }
+
+  void _handleNaverLogin(BuildContext context) async {
+    try {
+      final success = await AuthService().signInWithNaver();
+      if (success) {
+        _navigateToNextScreen(context);
+      } else {
+        _showErrorMessage(context, '네이버 로그인에 실패했습니다.');
+      }
+    } catch (e) {
+      _showErrorMessage(context, '네이버 로그인 중 오류가 발생했습니다.');
+    }
+  }
+
+  void _handleKakaoLogin(BuildContext context) async {
+    try {
+      final success = await AuthService().signInWithKakao();
+      if (success) {
+        _navigateToNextScreen(context);
+      } else {
+        _showErrorMessage(context, '카카오 로그인에 실패했습니다.');
+      }
+    } catch (e) {
+      _showErrorMessage(context, '카카오 로그인 중 오류가 발생했습니다.');
+    }
+  }
+
+  void _handleAppleLogin(BuildContext context) async {
+    try {
+      final success = await AuthService().signInWithApple();
+      if (success) {
+        _navigateToNextScreen(context);
+      } else {
+        _showErrorMessage(context, 'Apple 로그인에 실패했습니다.');
+      }
+    } catch (e) {
+      _showErrorMessage(context, 'Apple 로그인 중 오류가 발생했습니다.');
+    }
+  }
+
+  void _showErrorMessage(BuildContext context, String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red,
+      ),
+    );
   }
 
   void _navigateToNextScreen(BuildContext context) {
