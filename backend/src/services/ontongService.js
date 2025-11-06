@@ -4,7 +4,7 @@ const db = require('../config/database');
 class OntongService {
   constructor() {
     this.apiKey = process.env.ONTONG_API_KEY;
-    this.baseURL = process.env.ONTONG_API_BASE_URL || 'https://www.youthcenter.go.kr/openapi';
+    this.baseURL = process.env.ONTONG_API_BASE_URL || 'https://www.youthcenter.go.kr';
     this.client = axios.create({
       baseURL: this.baseURL,
       timeout: 10000,
@@ -30,7 +30,418 @@ class OntongService {
   }
 
   /**
-   * 정책 목록 조회 (데이터베이스 우선)
+   * 정책 검색 (프론트엔드 호환 - 온통청년 API 필드명 사용)
+   */
+  async searchPolicies(params = {}) {
+    const {
+      page = 1,
+      limit = 20,
+      searchQuery,
+      mainCategory,
+      subCategory,
+      policyMethodCode,
+      maritalStatusCode,
+      employmentCode,
+      educationCode,
+      specialRequirementCode,
+      majorCode,
+      incomeCode,
+      region
+    } = params;
+
+    try {
+      // 데이터베이스에서 정책 검색
+      const result = await this.searchPoliciesFromDB({
+        page,
+        limit,
+        searchQuery,
+        mainCategory,
+        subCategory,
+        policyMethodCode,
+        maritalStatusCode,
+        employmentCode,
+        educationCode,
+        specialRequirementCode,
+        majorCode,
+        incomeCode,
+        region
+      });
+
+      // 프론트엔드 형식으로 변환
+      const transformedPolicies = result.policies.map(policy =>
+        this.transformToFrontendFormat(policy)
+      );
+
+      return {
+        policies: transformedPolicies,
+        pagination: result.pagination
+      };
+
+    } catch (error) {
+      console.error('정책 검색 중 오류:', error);
+      return {
+        policies: [],
+        pagination: { page, limit, total: 0, hasNext: false }
+      };
+    }
+  }
+
+  /**
+   * 데이터베이스에서 정책 검색 (필터 파라미터 지원)
+   */
+  async searchPoliciesFromDB(params) {
+    const {
+      page = 1,
+      limit = 20,
+      searchQuery,
+      mainCategory,
+      subCategory,
+      policyMethodCode,
+      maritalStatusCode,
+      employmentCode,
+      educationCode,
+      specialRequirementCode,
+      majorCode,
+      incomeCode,
+      region
+    } = params;
+
+    const offset = (page - 1) * limit;
+    const conditions = ['status = $1'];
+    const values = ['active'];
+    let paramIndex = 2;
+
+    // 2025년 이후 정책만 필터링
+    conditions.push(`EXTRACT(YEAR FROM COALESCE(start_date, updated_at)) >= $${paramIndex}`);
+    values.push(2025);
+    paramIndex++;
+
+    // 검색어 필터
+    if (searchQuery) {
+      conditions.push(`(title ILIKE $${paramIndex} OR description ILIKE $${paramIndex})`);
+      values.push(`%${searchQuery}%`);
+      paramIndex++;
+    }
+
+    // 대분류 필터 (mainCategory를 category와 매핑)
+    if (mainCategory) {
+      const categoryMapping = {
+        '일자리': '취업지원',
+        '주거': '주거지원',
+        '교육': '장학금',
+        '복지문화': '생활복지',
+        '참여권리': '참여권리'
+      };
+      const mappedCategory = categoryMapping[mainCategory] || mainCategory;
+      conditions.push(`category = $${paramIndex}`);
+      values.push(mappedCategory);
+      paramIndex++;
+    }
+
+    // 중분류 필터
+    if (subCategory) {
+      conditions.push(`mclsfnm = $${paramIndex}`);
+      values.push(subCategory);
+      paramIndex++;
+    }
+
+    // 정책제공방법 필터
+    if (policyMethodCode) {
+      conditions.push(`plcypvsnmthdcd = $${paramIndex}`);
+      values.push(policyMethodCode);
+      paramIndex++;
+    }
+
+    // 결혼상태 필터
+    if (maritalStatusCode) {
+      conditions.push(`mrgsttscd = $${paramIndex}`);
+      values.push(maritalStatusCode);
+      paramIndex++;
+    }
+
+    // 취업요건 필터
+    if (employmentCode) {
+      conditions.push(`jobcd = $${paramIndex}`);
+      values.push(employmentCode);
+      paramIndex++;
+    }
+
+    // 학력요건 필터
+    if (educationCode) {
+      conditions.push(`schoolcd = $${paramIndex}`);
+      values.push(educationCode);
+      paramIndex++;
+    }
+
+    // 특화요건 필터 (addAplyQlfcCndCn 필드에 포함되어 있는지 확인)
+    if (specialRequirementCode) {
+      conditions.push(`addaplyqlfccndcn ILIKE $${paramIndex}`);
+      values.push(`%${specialRequirementCode}%`);
+      paramIndex++;
+    }
+
+    // 전공요건 필터
+    if (majorCode) {
+      conditions.push(`plcymajorcd = $${paramIndex}`);
+      values.push(majorCode);
+      paramIndex++;
+    }
+
+    // 소득조건 필터
+    if (incomeCode) {
+      conditions.push(`earncndsecd = $${paramIndex}`);
+      values.push(incomeCode);
+      paramIndex++;
+    }
+
+    // 지역 필터
+    if (region) {
+      conditions.push(`(region @> $${paramIndex} OR region @> $${paramIndex + 1})`);
+      values.push(JSON.stringify([region]), JSON.stringify(['전국']));
+      paramIndex += 2;
+    }
+
+    const whereClause = conditions.join(' AND ');
+
+    // 총 개수 조회
+    const countQuery = `SELECT COUNT(*) as total FROM policies WHERE ${whereClause}`;
+    const countResult = await db.query(countQuery, values);
+    const total = parseInt(countResult.rows[0].total);
+
+    // 정책 목록 조회 (모든 필터 코드 필드 포함)
+    const query = `
+      SELECT id, title, category, description, content, deadline, start_date, end_date,
+             application_url, contact_info, requirements, benefits, documents, region,
+             target_age, target_education, tags, image_url, status, view_count,
+             popularity_score, cached_at, updated_at,
+             mclsfnm, plcypvsnmthdcd, mrgsttscd, jobcd, schoolcd,
+             plcymajorcd, earncndsecd, addaplyqlfccndcn
+      FROM policies
+      WHERE ${whereClause}
+      ORDER BY popularity_score DESC, updated_at DESC
+      LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+    `;
+
+    values.push(limit, offset);
+    const result = await db.query(query, values);
+
+    return {
+      policies: result.rows,
+      pagination: {
+        page,
+        limit,
+        total,
+        hasNext: offset + limit < total
+      }
+    };
+  }
+
+  /**
+   * 데이터베이스 정책을 프론트엔드 형식으로 변환
+   * (온통청년 API 필드명 사용)
+   */
+  transformToFrontendFormat(policy) {
+    // 대분류 매핑 (category -> 온통청년 대분류명)
+    const categoryToBscPlanMapping = {
+      '취업지원': '일자리',
+      '주거지원': '주거',
+      '장학금': '교육',
+      '생활복지': '복지문화',
+      '참여권리': '참여권리',
+      '창업지원': '일자리',
+      '문화': '복지문화'
+    };
+
+    // 마감일 포맷 변환 (ISO -> YYYYMMDD)
+    let aplyPrdEndYmd = null;
+    let aplyPrdSeCd = '상시';
+
+    if (policy.end_date) {
+      try {
+        const endDate = new Date(policy.end_date);
+        aplyPrdEndYmd = endDate.toISOString().split('T')[0].replace(/-/g, '');
+        aplyPrdSeCd = '기간';
+      } catch (e) {
+        console.error('날짜 변환 오류:', e);
+      }
+    }
+
+    // 지역명 추출
+    let rgtrupInstCdNm = '전국';
+    if (policy.region && Array.isArray(policy.region) && policy.region.length > 0) {
+      rgtrupInstCdNm = policy.region[0];
+    }
+
+    return {
+      id: policy.id,
+      plcyNm: policy.title || '',
+      bscPlanPlcyWayNoNm: categoryToBscPlanMapping[policy.category] || policy.category || '',
+      plcyExplnCn: policy.description || '',
+      rgtrupInstCdNm: rgtrupInstCdNm,
+      aplyPrdSeCd: aplyPrdSeCd,
+      aplyPrdEndYmd: aplyPrdEndYmd,
+      applicationUrl: policy.application_url || '',
+      requirements: Array.isArray(policy.requirements) ? policy.requirements : [],
+      saves: policy.popularity_score || policy.view_count || 0,
+      isBookmarked: false,
+
+      // 필터 코드 정보 추가
+      lclsfNm: categoryToBscPlanMapping[policy.category] || policy.category || '',  // 대분류
+      mclsfNm: policy.mclsfnm || '',              // 중분류
+      plcyPvsnMthdCd: policy.plcypvsnmthdcd || '', // 정책제공방법 코드
+      mrgSttsCd: policy.mrgsttscd || '',          // 결혼상태 코드
+      jobCd: policy.jobcd || '',                  // 취업요건 코드
+      schoolCd: policy.schoolcd || '',            // 학력 코드
+      plcyMajorCd: policy.plcymajorcd || '',      // 전공 코드
+      earnCndSeCd: policy.earncndsecd || '',      // 소득조건 코드
+      spclRqrmCn: policy.addaplyqlfccndcn || ''   // 특화요건 텍스트
+    };
+  }
+
+  /**
+   * 추천 정책 조회 (관심사 기반)
+   */
+  async getRecommendedPolicies(params = {}) {
+    const { interests = [], limit = 2 } = params;
+
+    try {
+      let query;
+      let values = ['active'];
+      let paramIndex = 2;
+
+      if (interests.length > 0) {
+        // 관심사 매핑 (프론트엔드 관심사 -> DB 카테고리)
+        const categoryMapping = {
+          '창업': '창업지원',
+          '취업': '취업지원',
+          '주거': '주거지원',
+          '교육': '장학금',
+          '복지': '생활복지',
+          '문화': '문화',
+          '참여': '참여권리'
+        };
+
+        const categories = interests.map(interest =>
+          categoryMapping[interest] || interest
+        );
+
+        // 관심사와 일치하는 카테고리로 필터링
+        query = `
+          SELECT id, title, category, description, content, deadline, start_date, end_date,
+                 application_url, contact_info, requirements, benefits, documents, region,
+                 target_age, target_education, tags, image_url, status, view_count,
+                 popularity_score, cached_at, updated_at
+          FROM policies
+          WHERE status = $1
+            AND category = ANY($${paramIndex})
+            AND EXTRACT(YEAR FROM COALESCE(start_date, updated_at)) >= $${paramIndex + 1}
+          ORDER BY popularity_score DESC, updated_at DESC
+          LIMIT $${paramIndex + 2}
+        `;
+        values.push(categories, 2025, limit);
+      } else {
+        // 관심사가 없으면 인기도 순으로 반환
+        query = `
+          SELECT id, title, category, description, content, deadline, start_date, end_date,
+                 application_url, contact_info, requirements, benefits, documents, region,
+                 target_age, target_education, tags, image_url, status, view_count,
+                 popularity_score, cached_at, updated_at
+          FROM policies
+          WHERE status = $1
+            AND EXTRACT(YEAR FROM COALESCE(start_date, updated_at)) >= $${paramIndex}
+          ORDER BY popularity_score DESC, updated_at DESC
+          LIMIT $${paramIndex + 1}
+        `;
+        values.push(2025, limit);
+      }
+
+      const result = await db.query(query, values);
+
+      // 프론트엔드 형식으로 변환
+      const policies = result.rows.map(policy =>
+        this.transformToFrontendFormat(policy)
+      );
+
+      return { policies };
+
+    } catch (error) {
+      console.error('추천 정책 조회 실패:', error);
+      return { policies: [] };
+    }
+  }
+
+  /**
+   * 인기 정책 TOP N 조회
+   */
+  async getPopularPolicies(params = {}) {
+    const { limit = 3 } = params;
+
+    try {
+      const query = `
+        SELECT id, title, category, description, content, deadline, start_date, end_date,
+               application_url, contact_info, requirements, benefits, documents, region,
+               target_age, target_education, tags, image_url, status, view_count,
+               popularity_score, cached_at, updated_at
+        FROM policies
+        WHERE status = $1
+          AND EXTRACT(YEAR FROM COALESCE(start_date, updated_at)) >= $2
+        ORDER BY popularity_score DESC, view_count DESC, updated_at DESC
+        LIMIT $3
+      `;
+
+      const result = await db.query(query, ['active', 2025, limit]);
+
+      // 프론트엔드 형식으로 변환
+      const policies = result.rows.map(policy =>
+        this.transformToFrontendFormat(policy)
+      );
+
+      return { policies };
+
+    } catch (error) {
+      console.error('인기 정책 조회 실패:', error);
+      return { policies: [] };
+    }
+  }
+
+  /**
+   * 마감 임박 정책 조회
+   */
+  async getUpcomingDeadlines(params = {}) {
+    const { limit = 3 } = params;
+
+    try {
+      const query = `
+        SELECT id, title, category, description, content, deadline, start_date, end_date,
+               application_url, contact_info, requirements, benefits, documents, region,
+               target_age, target_education, tags, image_url, status, view_count,
+               popularity_score, cached_at, updated_at
+        FROM policies
+        WHERE status = $1
+          AND end_date IS NOT NULL
+          AND end_date > CURRENT_DATE
+          AND EXTRACT(YEAR FROM COALESCE(start_date, updated_at)) >= $2
+        ORDER BY end_date ASC
+        LIMIT $3
+      `;
+
+      const result = await db.query(query, ['active', 2025, limit]);
+
+      // 프론트엔드 형식으로 변환
+      const policies = result.rows.map(policy =>
+        this.transformToFrontendFormat(policy)
+      );
+
+      return { policies };
+
+    } catch (error) {
+      console.error('마감 임박 정책 조회 실패:', error);
+      return { policies: [] };
+    }
+  }
+
+  /**
+   * 정책 목록 조회 (데이터베이스 캐시 우선, API는 갱신시에만)
    */
   async getPolicies(params = {}) {
     const {
@@ -102,6 +513,11 @@ class OntongService {
     const conditions = ['status = $1'];
     const values = ['active'];
     let paramIndex = 2;
+
+    // 2025년 이후 정책만 필터링
+    conditions.push(`EXTRACT(YEAR FROM COALESCE(start_date, updated_at)) >= $${paramIndex}`);
+    values.push(2025);
+    paramIndex++;
 
     // 조건 추가
     if (category) {
@@ -186,17 +602,19 @@ class OntongService {
       ageMax
     } = params;
 
-    // 온통청년 API 파라미터 구성
+    // 온통청년 API 파라미터 구성 (2025년 신규 API)
     const apiParams = {
-      openApiVlak: this.apiKey,
-      display: limit,
-      pageIndex: page,
-      ...(category && { bizTycdSel: this.mapCategoryToCode(category) }),
-      ...(region && { srchPolicyRegion: region }),
-      ...(searchText && { query: searchText })
+      apiKeyNm: this.apiKey,
+      pageSize: limit,
+      pageNum: page,
+      pageType: '1',  // 목록 조회
+      rtnType: 'json',
+      ...(category && { lclsfNm: category }),
+      ...(region && { zipCd: region }),
+      ...(searchText && { plcyNm: searchText })
     };
 
-    const response = await this.client.get('/youthPolicy.json', {
+    const response = await this.client.get('/go/ythip/getPlcy', {
       params: apiParams
     });
 
@@ -228,7 +646,7 @@ class OntongService {
       pagination: {
         page,
         limit,
-        total: response.data.totalCount || 0,
+        total: response.data.result?.pagging?.totCount || response.data.totalCount || 0,
         hasNext: filteredPolicies.length === limit
       }
     };
@@ -379,10 +797,12 @@ class OntongService {
    */
   async getPolicyDetail(policyId) {
     try {
-      const response = await this.client.get('/youthPolicyDetail.json', {
+      const response = await this.client.get('/go/ythip/getPlcy', {
         params: {
-          openApiVlak: this.apiKey,
-          bizId: policyId
+          apiKeyNm: this.apiKey,
+          pageType: '2',
+          plcyNo: policyId,
+          rtnType: 'json'
         }
       });
 
@@ -445,26 +865,97 @@ class OntongService {
   }
 
   /**
-   * 온통청년 데이터를 내부 포맷으로 변환
+   * 온통청년 데이터를 내부 포맷으로 변환 (모든 필드 포함)
    */
   transformPolicies(data) {
-    if (!data.youthPolicy) return [];
+    // 2025년 신규 API 응답 구조: result.youthPolicyList
+    const policyList = data.result?.youthPolicyList || data.youthPolicyList || [];
+    if (policyList.length === 0) return [];
 
-    return data.youthPolicy.map(item => ({
-      id: item.bizId,
-      title: item.polyBizSjnm,
-      category: this.mapCodeToCategory(item.bizTycdSel),
-      description: item.polyItcnCn,
-      content: item.sporCn,
-      deadline: this.parseDate(item.rqutPrdCn),
-      start_date: this.parseDate(item.rqutPrdCn, 'start'),
-      end_date: this.parseDate(item.rqutPrdCn, 'end'),
-      application_url: item.rqutUrla,
-      requirements: this.parseRequirements(item.ageInfo),
-      region: this.parseRegion(item.polyRlmCd),
-      target_age: this.parseAge(item.ageInfo),
-      tags: this.parseTags(item.keyword),
-      cached_at: new Date()
+    return policyList.map(item => ({
+      // 기본 필드 (새 API 필드명으로 변경)
+      id: item.plcyNo,
+      title: item.plcyNm,
+      category: item.lclsfNm,
+      description: item.plcyExplnCn,
+      content: item.plcySprtCn,
+      deadline: this.parseDate(item.aplyYmd),
+      start_date: item.bizPrdBgngYmd ? new Date(item.bizPrdBgngYmd) : null,
+      end_date: item.bizPrdEndYmd ? new Date(item.bizPrdEndYmd) : null,
+      application_url: item.aplyUrlAddr,
+      requirements: this.parseRequirements(item.addAplyQlfcCndCn),
+      region: item.zipCd,
+      target_age: {
+        min: item.sprtTrgtMinAge ? parseInt(item.sprtTrgtMinAge) : null,
+        max: item.sprtTrgtMaxAge ? parseInt(item.sprtTrgtMaxAge) : null
+      },
+      tags: this.parseTags(item.plcyKywdNm),
+      cached_at: new Date(),
+
+      // 2025년 신규 API 전체 60개 필드
+      plcyNo: item.plcyNo,
+      plcyNm: item.plcyNm,
+      plcyExplnCn: item.plcyExplnCn,
+      plcyKywdNm: item.plcyKywdNm,
+      lclsfNm: item.lclsfNm,
+      mclsfNm: item.mclsfNm,
+      plcySprtCn: item.plcySprtCn,
+      bscPlanCycl: item.bscPlanCycl,
+      bscPlanPlcyWayNo: item.bscPlanPlcyWayNo,
+      bscPlanFcsAsmtNo: item.bscPlanFcsAsmtNo,
+      bscPlanAsmtNo: item.bscPlanAsmtNo,
+      pvsnInstGroupCd: item.pvsnInstGroupCd,
+      plcyPvsnMthdCd: item.plcyPvsnMthdCd,
+      plcyAprvSttsCd: item.plcyAprvSttsCd,
+      sprvsnInstCd: item.sprvsnInstCd,
+      sprvsnInstCdNm: item.sprvsnInstCdNm,
+      sprvsnInstPicNm: item.sprvsnInstPicNm,
+      operInstCd: item.operInstCd,
+      operInstCdNm: item.operInstCdNm,
+      operInstPicNm: item.operInstPicNm,
+      sprtSclLmtYn: item.sprtSclLmtYn,
+      aplyPrdSeCd: item.aplyPrdSeCd,
+      bizPrdSeCd: item.bizPrdSeCd,
+      bizPrdBgngYmd: item.bizPrdBgngYmd,
+      bizPrdEndYmd: item.bizPrdEndYmd,
+      bizPrdEtcCn: item.bizPrdEtcCn,
+      plcyAplyMthdCn: item.plcyAplyMthdCn,
+      srngMthdCn: item.srngMthdCn,
+      aplyUrlAddr: item.aplyUrlAddr,
+      sbmsnDcmntCn: item.sbmsnDcmntCn,
+      etcMttrCn: item.etcMttrCn,
+      refUrlAddr1: item.refUrlAddr1,
+      refUrlAddr2: item.refUrlAddr2,
+      sprtSclCnt: item.sprtSclCnt,
+      sprtArvlSeqYn: item.sprtArvlSeqYn,
+      sprtTrgtMinAge: item.sprtTrgtMinAge,
+      sprtTrgtMaxAge: item.sprtTrgtMaxAge,
+      sprtTrgtAgeLmtYn: item.sprtTrgtAgeLmtYn,
+      mrgSttsCd: item.mrgSttsCd,
+      earnCndSeCd: item.earnCndSeCd,
+      earnMinAmt: item.earnMinAmt,
+      earnMaxAmt: item.earnMaxAmt,
+      earnEtcCn: item.earnEtcCn,
+      addAplyQlfcCndCn: item.addAplyQlfcCndCn,
+      ptcpPrpTrgtCn: item.ptcpPrpTrgtCn,
+      inqCnt: item.inqCnt,
+      rgtrInstCd: item.rgtrInstCd,
+      rgtrInstCdNm: item.rgtrInstCdNm,
+      rgtrUpInstCd: item.rgtrUpInstCd,
+      rgtrUpInstCdNm: item.rgtrUpInstCdNm,
+      rgtrHghrkInstCd: item.rgtrHghrkInstCd,
+      rgtrHghrkInstCdNm: item.rgtrHghrkInstCdNm,
+      zipCd: item.zipCd,
+      plcyMajorCd: item.plcyMajorCd,
+      jobCd: item.jobCd,
+      schoolCd: item.schoolCd,
+      aplyYmd: item.aplyYmd,
+      frstRegDt: item.frstRegDt,
+      lastMdfcnDt: item.lastMdfcnDt,
+      sbizCd: item.sbizCd,
+
+      // 원본 데이터 보관
+      raw_data: item
     }));
   }
 
@@ -487,55 +978,205 @@ class OntongService {
   }
 
   /**
-   * 배치로 정책 데이터 저장
+   * 배치로 정책 데이터 저장 (2025 API 전체 60개 필드 포함)
    */
   async savePoliciesBatch(policies) {
-    const values = policies.map(policy => [
-      policy.id,
-      policy.title,
-      policy.category,
-      policy.description,
-      policy.content,
-      policy.deadline,
-      policy.start_date,
-      policy.end_date,
-      policy.application_url,
-      JSON.stringify(policy.requirements || []),
-      JSON.stringify(policy.region || []),
-      JSON.stringify(policy.target_age || {}),
-      JSON.stringify(policy.tags || []),
-      policy.cached_at
-    ]);
+    for (const policy of policies) {
+      const query = `
+        INSERT INTO policies (
+          id, title, category, description, content,
+          deadline, start_date, end_date, application_url,
+          requirements, region, target_age, tags, cached_at,
+          plcyno, plcynm, plcyexplncn, plcykywdnm,
+          lclsfnm, mclsfnm, plcysprtcn,
+          bscplancycl, bscplanplcywayno, bscplanfcsasmtno, bscplanasmtno,
+          pvsninstgroupcd, plcypvsnmthdcd, plcyaprvsttscd,
+          sprvsninstcd, sprvsninstcdnm, sprvsninstpicnm,
+          operinstcd, operinstcdnm, operinstpicnm,
+          sprtscllmtyn, aplyprdsecd, bizprdsecd,
+          bizprdbgngymd, bizprdendymd, bizprdetccn,
+          plcyaplymthdcn, srngmthdcn, aplyurladdr,
+          sbmsndcmntcn, etcmttrcn, refurladdr1, refurladdr2,
+          sprtsclcnt, sprtarvlseqyn,
+          sprttrgtminage, sprttrgtmaxage, sprttrgtagelmtyn,
+          mrgsttscd, earncndsecd, earnminamt, earnmaxamt, earnetccn,
+          addaplyqlfccndcn, ptcpprptrgtcn, inqcnt,
+          rgtrinstcd, rgtrinstcdnm, rgtrupinstcd, rgtrupinstcdnm,
+          rgtrhghrkinstcd, rgtrhghrkinstcdnm,
+          zipcd, plcymajorcd, jobcd, schoolcd,
+          aplyymd, frstregdt, lastmdfcndt, sbizcd,
+          raw_data
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+          $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
+          $21, $22, $23, $24, $25, $26, $27, $28, $29, $30,
+          $31, $32, $33, $34, $35, $36, $37, $38, $39, $40,
+          $41, $42, $43, $44, $45, $46, $47, $48, $49, $50,
+          $51, $52, $53, $54, $55, $56, $57, $58, $59, $60,
+          $61, $62, $63, $64, $65, $66, $67, $68, $69, $70,
+          $71, $72, $73, $74, $75
+        )
+        ON CONFLICT (id) DO UPDATE SET
+          title = EXCLUDED.title,
+          category = EXCLUDED.category,
+          description = EXCLUDED.description,
+          content = EXCLUDED.content,
+          deadline = EXCLUDED.deadline,
+          start_date = EXCLUDED.start_date,
+          end_date = EXCLUDED.end_date,
+          application_url = EXCLUDED.application_url,
+          requirements = EXCLUDED.requirements,
+          region = EXCLUDED.region,
+          target_age = EXCLUDED.target_age,
+          tags = EXCLUDED.tags,
+          cached_at = EXCLUDED.cached_at,
+          plcyno = EXCLUDED.plcyno,
+          plcynm = EXCLUDED.plcynm,
+          plcyexplncn = EXCLUDED.plcyexplncn,
+          plcykywdnm = EXCLUDED.plcykywdnm,
+          lclsfnm = EXCLUDED.lclsfnm,
+          mclsfnm = EXCLUDED.mclsfnm,
+          plcysprtcn = EXCLUDED.plcysprtcn,
+          bscplancycl = EXCLUDED.bscplancycl,
+          bscplanplcywayno = EXCLUDED.bscplanplcywayno,
+          bscplanfcsasmtno = EXCLUDED.bscplanfcsasmtno,
+          bscplanasmtno = EXCLUDED.bscplanasmtno,
+          pvsninstgroupcd = EXCLUDED.pvsninstgroupcd,
+          plcypvsnmthdcd = EXCLUDED.plcypvsnmthdcd,
+          plcyaprvsttscd = EXCLUDED.plcyaprvsttscd,
+          sprvsninstcd = EXCLUDED.sprvsninstcd,
+          sprvsninstcdnm = EXCLUDED.sprvsninstcdnm,
+          sprvsninstpicnm = EXCLUDED.sprvsninstpicnm,
+          operinstcd = EXCLUDED.operinstcd,
+          operinstcdnm = EXCLUDED.operinstcdnm,
+          operinstpicnm = EXCLUDED.operinstpicnm,
+          sprtscllmtyn = EXCLUDED.sprtscllmtyn,
+          aplyprdsecd = EXCLUDED.aplyprdsecd,
+          bizprdsecd = EXCLUDED.bizprdsecd,
+          bizprdbgngymd = EXCLUDED.bizprdbgngymd,
+          bizprdendymd = EXCLUDED.bizprdendymd,
+          bizprdetccn = EXCLUDED.bizprdetccn,
+          plcyaplymthdcn = EXCLUDED.plcyaplymthdcn,
+          srngmthdcn = EXCLUDED.srngmthdcn,
+          aplyurladdr = EXCLUDED.aplyurladdr,
+          sbmsndcmntcn = EXCLUDED.sbmsndcmntcn,
+          etcmttrcn = EXCLUDED.etcmttrcn,
+          refurladdr1 = EXCLUDED.refurladdr1,
+          refurladdr2 = EXCLUDED.refurladdr2,
+          sprtsclcnt = EXCLUDED.sprtsclcnt,
+          sprtarvlseqyn = EXCLUDED.sprtarvlseqyn,
+          sprttrgtminage = EXCLUDED.sprttrgtminage,
+          sprttrgtmaxage = EXCLUDED.sprttrgtmaxage,
+          sprttrgtagelmtyn = EXCLUDED.sprttrgtagelmtyn,
+          mrgsttscd = EXCLUDED.mrgsttscd,
+          earncndsecd = EXCLUDED.earncndsecd,
+          earnminamt = EXCLUDED.earnminamt,
+          earnmaxamt = EXCLUDED.earnmaxamt,
+          earnetccn = EXCLUDED.earnetccn,
+          addaplyqlfccndcn = EXCLUDED.addaplyqlfccndcn,
+          ptcpprptrgtcn = EXCLUDED.ptcpprptrgtcn,
+          inqcnt = EXCLUDED.inqcnt,
+          rgtrinstcd = EXCLUDED.rgtrinstcd,
+          rgtrinstcdnm = EXCLUDED.rgtrinstcdnm,
+          rgtrupinstcd = EXCLUDED.rgtrupinstcd,
+          rgtrupinstcdnm = EXCLUDED.rgtrupinstcdnm,
+          rgtrhghrkinstcd = EXCLUDED.rgtrhghrkinstcd,
+          rgtrhghrkinstcdnm = EXCLUDED.rgtrhghrkinstcdnm,
+          zipcd = EXCLUDED.zipcd,
+          plcymajorcd = EXCLUDED.plcymajorcd,
+          jobcd = EXCLUDED.jobcd,
+          schoolcd = EXCLUDED.schoolcd,
+          aplyymd = EXCLUDED.aplyymd,
+          frstregdt = EXCLUDED.frstregdt,
+          lastmdfcndt = EXCLUDED.lastmdfcndt,
+          sbizcd = EXCLUDED.sbizcd,
+          raw_data = EXCLUDED.raw_data,
+          updated_at = CURRENT_TIMESTAMP
+      `;
 
-    const query = `
-      INSERT INTO policies (
-        id, title, category, description, content,
-        deadline, start_date, end_date, application_url,
-        requirements, region, target_age, tags, cached_at
-      ) VALUES ${values.map((_, i) =>
-        `($${i * 14 + 1}, $${i * 14 + 2}, $${i * 14 + 3}, $${i * 14 + 4}, $${i * 14 + 5},
-         $${i * 14 + 6}, $${i * 14 + 7}, $${i * 14 + 8}, $${i * 14 + 9},
-         $${i * 14 + 10}, $${i * 14 + 11}, $${i * 14 + 12}, $${i * 14 + 13}, $${i * 14 + 14})`
-      ).join(', ')}
-      ON CONFLICT (id) DO UPDATE SET
-        title = EXCLUDED.title,
-        category = EXCLUDED.category,
-        description = EXCLUDED.description,
-        content = EXCLUDED.content,
-        deadline = EXCLUDED.deadline,
-        start_date = EXCLUDED.start_date,
-        end_date = EXCLUDED.end_date,
-        application_url = EXCLUDED.application_url,
-        requirements = EXCLUDED.requirements,
-        region = EXCLUDED.region,
-        target_age = EXCLUDED.target_age,
-        tags = EXCLUDED.tags,
-        cached_at = EXCLUDED.cached_at,
-        updated_at = CURRENT_TIMESTAMP
-    `;
+      const values = [
+        // Basic backward-compatible fields
+        policy.id,
+        policy.title,
+        policy.category,
+        policy.description,
+        policy.content,
+        policy.deadline,
+        policy.start_date,
+        policy.end_date,
+        policy.application_url,
+        JSON.stringify(policy.requirements || []),
+        JSON.stringify(policy.region || []),
+        JSON.stringify(policy.target_age || {}),
+        JSON.stringify(policy.tags || []),
+        policy.cached_at,
 
-    const flatValues = values.flat();
-    await db.query(query, flatValues);
+        // 2025 API 전체 60개 필드
+        policy.plcyNo,
+        policy.plcyNm,
+        policy.plcyExplnCn,
+        policy.plcyKywdNm,
+        policy.lclsfNm,
+        policy.mclsfNm,
+        policy.plcySprtCn,
+        policy.bscPlanCycl,
+        policy.bscPlanPlcyWayNo,
+        policy.bscPlanFcsAsmtNo,
+        policy.bscPlanAsmtNo,
+        policy.pvsnInstGroupCd,
+        policy.plcyPvsnMthdCd,
+        policy.plcyAprvSttsCd,
+        policy.sprvsnInstCd,
+        policy.sprvsnInstCdNm,
+        policy.sprvsnInstPicNm,
+        policy.operInstCd,
+        policy.operInstCdNm,
+        policy.operInstPicNm,
+        policy.sprtSclLmtYn,
+        policy.aplyPrdSeCd,
+        policy.bizPrdSeCd,
+        policy.bizPrdBgngYmd,
+        policy.bizPrdEndYmd,
+        policy.bizPrdEtcCn,
+        policy.plcyAplyMthdCn,
+        policy.srngMthdCn,
+        policy.aplyUrlAddr,
+        policy.sbmsnDcmntCn,
+        policy.etcMttrCn,
+        policy.refUrlAddr1,
+        policy.refUrlAddr2,
+        policy.sprtSclCnt,
+        policy.sprtArvlSeqYn,
+        policy.sprtTrgtMinAge,
+        policy.sprtTrgtMaxAge,
+        policy.sprtTrgtAgeLmtYn,
+        policy.mrgSttsCd,
+        policy.earnCndSeCd,
+        policy.earnMinAmt,
+        policy.earnMaxAmt,
+        policy.earnEtcCn,
+        policy.addAplyQlfcCndCn,
+        policy.ptcpPrpTrgtCn,
+        policy.inqCnt,
+        policy.rgtrInstCd,
+        policy.rgtrInstCdNm,
+        policy.rgtrUpInstCd,
+        policy.rgtrUpInstCdNm,
+        policy.rgtrHghrkInstCd,
+        policy.rgtrHghrkInstCdNm,
+        policy.zipCd,
+        policy.plcyMajorCd,
+        policy.jobCd,
+        policy.schoolCd,
+        policy.aplyYmd,
+        policy.frstRegDt,
+        policy.lastMdfcnDt,
+        policy.sbizCd,
+        JSON.stringify(policy.raw_data || {})
+      ];
+
+      await db.query(query, values);
+    }
   }
 
   /**
@@ -554,6 +1195,11 @@ class OntongService {
       let whereConditions = ["status = 'active'"];
       let queryParams = [];
       let paramIndex = 1;
+
+      // 2025년 이후 정책만 필터링
+      whereConditions.push(`EXTRACT(YEAR FROM COALESCE(start_date, updated_at)) >= $${paramIndex}`);
+      queryParams.push(2025);
+      paramIndex++;
 
       if (category) {
         whereConditions.push(`category = $${paramIndex}`);
