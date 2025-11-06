@@ -45,7 +45,53 @@ router.get('/', [
   query('ageMax')
     .optional()
     .isInt({ min: 18, max: 65 })
-    .withMessage('Age max must be between 18 and 65')
+    .withMessage('Age max must be between 18 and 65'),
+  // 추가 필터 파라미터
+  query('mainCategory')
+    .optional()
+    .isString()
+    .trim()
+    .withMessage('Main category must be a string'),
+  query('subCategory')
+    .optional()
+    .isString()
+    .trim()
+    .withMessage('Sub category must be a string'),
+  query('policyMethodCode')
+    .optional()
+    .isString()
+    .trim()
+    .withMessage('Policy method code must be a string'),
+  query('maritalStatusCode')
+    .optional()
+    .isString()
+    .trim()
+    .withMessage('Marital status code must be a string'),
+  query('employmentCode')
+    .optional()
+    .isString()
+    .trim()
+    .withMessage('Employment code must be a string'),
+  query('educationCode')
+    .optional()
+    .isString()
+    .trim()
+    .withMessage('Education code must be a string'),
+  query('specialRequirementCode')
+    .optional()
+    .isString()
+    .trim()
+    .withMessage('Special requirement code must be a string'),
+  query('majorCode')
+    .optional()
+    .isString()
+    .trim()
+    .withMessage('Major code must be a string'),
+  query('incomeCode')
+    .optional()
+    .isString()
+    .trim()
+    .withMessage('Income code must be a string')
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -64,19 +110,54 @@ router.get('/', [
       region,
       search,
       ageMin,
-      ageMax
+      ageMax,
+      mainCategory,
+      subCategory,
+      policyMethodCode,
+      maritalStatusCode,
+      employmentCode,
+      educationCode,
+      specialRequirementCode,
+      majorCode,
+      incomeCode
     } = req.query;
 
-    // 온통청년 API 또는 캐시에서 정책 조회
-    const result = await ontongService.getPolicies({
-      page: parseInt(page),
-      limit: parseInt(limit),
-      category,
-      region,
-      searchText: search,
-      ageMin: ageMin ? parseInt(ageMin) : undefined,
-      ageMax: ageMax ? parseInt(ageMax) : undefined
-    });
+    // 포괄적 필터가 제공되었는지 확인
+    const hasComprehensiveFilters = mainCategory || subCategory || policyMethodCode ||
+      maritalStatusCode || employmentCode || educationCode ||
+      specialRequirementCode || majorCode || incomeCode;
+
+    let result;
+
+    if (hasComprehensiveFilters) {
+      // 포괄적 필터링: searchPoliciesFromDB 직접 호출
+      result = await ontongService.searchPoliciesFromDB({
+        page: parseInt(page),
+        limit: parseInt(limit),
+        mainCategory,
+        subCategory,
+        region,
+        policyMethodCode,
+        maritalStatusCode,
+        employmentCode,
+        educationCode,
+        specialRequirementCode,
+        majorCode,
+        incomeCode,
+        searchText: search
+      });
+    } else {
+      // 기본 필터링: 기존 getPolicies 사용
+      result = await ontongService.getPolicies({
+        page: parseInt(page),
+        limit: parseInt(limit),
+        category,
+        region,
+        searchText: search,
+        ageMin: ageMin ? parseInt(ageMin) : undefined,
+        ageMax: ageMax ? parseInt(ageMax) : undefined
+      });
+    }
 
     // 로그인한 사용자의 경우 북마크 정보 추가
     if (req.user && result.policies.length > 0) {

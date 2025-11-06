@@ -123,18 +123,10 @@ class OntongService {
       paramIndex++;
     }
 
-    // 대분류 필터 (mainCategory를 category와 매핑)
+    // 대분류 필터
     if (mainCategory) {
-      const categoryMapping = {
-        '일자리': '취업지원',
-        '주거': '주거지원',
-        '교육': '장학금',
-        '복지문화': '생활복지',
-        '참여권리': '참여권리'
-      };
-      const mappedCategory = categoryMapping[mainCategory] || mainCategory;
       conditions.push(`category = $${paramIndex}`);
-      values.push(mappedCategory);
+      values.push(mainCategory);
       paramIndex++;
     }
 
@@ -226,7 +218,7 @@ class OntongService {
     const result = await db.query(query, values);
 
     return {
-      policies: result.rows,
+      policies: result.rows.map(row => this.transformToFrontendFormat(row)),
       pagination: {
         page,
         limit,
@@ -566,7 +558,9 @@ class OntongService {
       SELECT id, title, category, description, content, deadline, start_date, end_date,
              application_url, contact_info, requirements, benefits, documents, region,
              target_age, target_education, tags, image_url, status, view_count,
-             popularity_score, cached_at, updated_at
+             popularity_score, cached_at, updated_at,
+             mclsfnm, plcypvsnmthdcd, mrgsttscd, jobcd, schoolcd,
+             plcymajorcd, earncndsecd, addaplyqlfccndcn
       FROM policies
       WHERE ${whereClause}
       ORDER BY popularity_score DESC, updated_at DESC
@@ -577,7 +571,7 @@ class OntongService {
     const result = await db.query(query, values);
 
     return {
-      policies: result.rows.map(row => this.transformDBPolicy(row)),
+      policies: result.rows.map(row => this.transformToFrontendFormat(row)),
       pagination: {
         page,
         limit,

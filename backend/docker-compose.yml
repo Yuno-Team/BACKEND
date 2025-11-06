@@ -22,7 +22,11 @@ services:
     build: .
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://yuno:${DB_PASSWORD:-yunopassword}@postgres:5432/yuno
+      DB_USER: yuno
+      DB_PASSWORD: ${DB_PASSWORD:-yunopassword}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: yuno
       ONTONG_API_KEY: ${ONTONG_API_KEY}
       JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
