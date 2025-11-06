@@ -14,6 +14,9 @@ const cronJobs = require('./utils/cron');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Nginx 리버스 프록시 신뢰 설정
+app.set('trust proxy', true);
+
 // 보안 미들웨어
 app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" }
