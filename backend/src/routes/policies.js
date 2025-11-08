@@ -268,7 +268,8 @@ router.get('/lists/popular', optionalAuth, async (req, res) => {
       LIMIT $1
     `, [limit]);
 
-    let policies = result.rows;
+    // DB 데이터를 프론트엔드 형식으로 변환
+    let policies = result.rows.map(row => ontongService.transformToFrontendFormat(row));
 
     // 로그인한 사용자의 경우 북마크 정보 추가
     if (req.user && policies.length > 0) {
@@ -318,7 +319,8 @@ router.get('/lists/deadline', optionalAuth, async (req, res) => {
       LIMIT $1
     `, [limit]);
 
-    let policies = result.rows;
+    // DB 데이터를 프론트엔드 형식으로 변환
+    let policies = result.rows.map(row => ontongService.transformToFrontendFormat(row));
 
     // 로그인한 사용자의 경우 북마크 정보 추가
     if (req.user && policies.length > 0) {
