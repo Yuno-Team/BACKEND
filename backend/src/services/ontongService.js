@@ -244,19 +244,24 @@ class OntongService {
       '문화': '복지문화'
     };
 
-    // 마감일 포맷 변환 (ISO -> YYYYMMDD)
-    let aplyPrdEndYmd = null;
-    let aplyPrdSeCd = '상시';
-
-    if (policy.end_date) {
+    // 날짜 포맷 변환 헬퍼 (ISO -> YYYYMMDD)
+    const formatDateToYMD = (dateStr) => {
+      if (!dateStr) return null;
       try {
-        const endDate = new Date(policy.end_date);
-        aplyPrdEndYmd = endDate.toISOString().split('T')[0].replace(/-/g, '');
-        aplyPrdSeCd = '기간';
+        const date = new Date(dateStr);
+        return date.toISOString().split('T')[0].replace(/-/g, '');
       } catch (e) {
-        console.error('날짜 변환 오류:', e);
+        return null;
       }
-    }
+    };
+
+    // 사업 기간 변환
+    const bizPrdBgngYmd = formatDateToYMD(policy.start_date);
+    const bizPrdEndYmd = formatDateToYMD(policy.end_date);
+
+    // 마감일 포맷 변환
+    let aplyPrdEndYmd = bizPrdEndYmd;
+    let aplyPrdSeCd = bizPrdEndYmd ? '기간' : '상시';
 
     // 지역명 추출
     let rgtrupInstCdNm = '전국';
@@ -276,6 +281,10 @@ class OntongService {
       requirements: Array.isArray(policy.requirements) ? policy.requirements : [],
       saves: policy.popularity_score || policy.view_count || 0,
       isBookmarked: false,
+
+      // 사업 기간 원본 필드 추가
+      bizPrdBgngYmd: bizPrdBgngYmd,  // 사업 시작일
+      bizPrdEndYmd: bizPrdEndYmd,    // 사업 종료일
 
       // 필터 코드 정보 추가
       lclsfNm: categoryToBscPlanMapping[policy.category] || policy.category || '',  // 대분류
@@ -811,7 +820,10 @@ class OntongService {
         [policyId]
       );
 
-      return result.rows[0] || null;
+      if (!result.rows[0]) return null;
+
+      // DB 정책을 프론트엔드 형식으로 변환
+      return this.transformToFrontendFormat(result.rows[0]);
     }
   }
 
