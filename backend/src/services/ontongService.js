@@ -295,7 +295,24 @@ class OntongService {
       schoolCd: policy.schoolcd || '',            // 학력 코드
       plcyMajorCd: policy.plcymajorcd || '',      // 전공 코드
       earnCndSeCd: policy.earncndsecd || '',      // 소득조건 코드
-      spclRqrmCn: policy.addaplyqlfccndcn || ''   // 특화요건 텍스트
+      spclRqrmCn: policy.addaplyqlfccndcn || '',  // 특화요건 텍스트
+
+      // 정책 상세 정보 추가
+      plcySprtCn: policy.plcysprtcn || policy.content || '',       // 지원내용
+      plcyAplyMthdCn: policy.plcyaplymthdcn || '',                 // 신청방법
+      operInstCdNm: policy.operinstcdnm || '',                     // 운영기관명
+      sprvsnInstCdNm: policy.sprvsninstcdnm || '',                 // 주관기관명
+      rgtrInstCdNm: policy.rgtrinstcdnm || '',                     // 등록기관명
+      sprtTrgtMinAge: policy.sprttrgtminage || null,               // 최소연령
+      sprtTrgtMaxAge: policy.sprttrgtmaxage || null,               // 최대연령
+      zipCd: policy.zipcd || '',                                   // 지역코드
+      sbmsnDcmntCn: policy.sbmsndcmntcn || '',                     // 제출서류
+      refUrlAddr1: policy.refurladdr1 || '',                       // 참고URL1
+      refUrlAddr2: policy.refurladdr2 || '',                       // 참고URL2
+      srngMthdCn: policy.srngmthdcn || '',                         // 선정방법
+      etcMttrCn: policy.etcmttrcn || '',                           // 기타사항
+      operInstPicNm: policy.operinstpicnm || '',                   // 운영기관 담당자명
+      sprvsnInstPicNm: policy.sprvsninstpicnm || ''                // 주관기관 담당자명
     };
   }
 

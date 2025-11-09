@@ -73,6 +73,21 @@ async function syncPolicies() {
                 plcymajorcd = $20,
                 earncndsecd = $21,
                 addaplyqlfccndcn = $22,
+                plcysprtcn = $23,
+                plcyaplymthdcn = $24,
+                operinstcdnm = $25,
+                sprvsninstcdnm = $26,
+                rgtrinstcdnm = $27,
+                sprttrgtminage = $28,
+                sprttrgtmaxage = $29,
+                zipcd = $30,
+                sbmsndcmntcn = $31,
+                refurladdr1 = $32,
+                refurladdr2 = $33,
+                srngmthdcn = $34,
+                etcmttrcn = $35,
+                operinstpicnm = $36,
+                sprvsninstpicnm = $37,
                 status = 'active',
                 cached_at = CURRENT_TIMESTAMP,
                 updated_at = CURRENT_TIMESTAMP
@@ -106,7 +121,22 @@ async function syncPolicies() {
               policy.schoolCd,
               policy.plcyMajorCd,
               policy.earnCndSeCd,
-              policy.addAplyQlfcCndCn
+              policy.addAplyQlfcCndCn,
+              policy.plcySprtCn,
+              policy.plcyAplyMthdCn,
+              policy.operInstCdNm,
+              policy.sprvsnInstCdNm,
+              policy.rgtrInstCdNm,
+              parseInt(policy.sprtTrgtMinAge) || null,
+              parseInt(policy.sprtTrgtMaxAge) || null,
+              policy.zipCd,
+              policy.sbmsnDcmntCn,
+              policy.refUrlAddr1,
+              policy.refUrlAddr2,
+              policy.srngMthdCn,
+              policy.etcMttrCn,
+              policy.operInstPicNm,
+              policy.sprvsnInstPicNm
             ]);
             totalUpdated++;
           } else {
@@ -118,10 +148,16 @@ async function syncPolicies() {
                 requirements, benefits, region, target_age,
                 mclsfnm, plcypvsnmthdcd, mrgsttscd, jobcd, schoolcd,
                 plcymajorcd, earncndsecd, addaplyqlfccndcn,
+                plcysprtcn, plcyaplymthdcn, operinstcdnm, sprvsninstcdnm,
+                rgtrinstcdnm, sprttrgtminage, sprttrgtmaxage, zipcd,
+                sbmsndcmntcn, refurladdr1, refurladdr2, srngmthdcn,
+                etcmttrcn, operinstpicnm, sprvsninstpicnm,
                 status, cached_at, updated_at
               ) VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
                 $15, $16, $17, $18, $19, $20, $21, $22,
+                $23, $24, $25, $26, $27, $28, $29, $30,
+                $31, $32, $33, $34, $35, $36, $37,
                 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
               )
             `, [
@@ -153,7 +189,22 @@ async function syncPolicies() {
               policy.schoolCd,
               policy.plcyMajorCd,
               policy.earnCndSeCd,
-              policy.addAplyQlfcCndCn
+              policy.addAplyQlfcCndCn,
+              policy.plcySprtCn,
+              policy.plcyAplyMthdCn,
+              policy.operInstCdNm,
+              policy.sprvsnInstCdNm,
+              policy.rgtrInstCdNm,
+              parseInt(policy.sprtTrgtMinAge) || null,
+              parseInt(policy.sprtTrgtMaxAge) || null,
+              policy.zipCd,
+              policy.sbmsnDcmntCn,
+              policy.refUrlAddr1,
+              policy.refUrlAddr2,
+              policy.srngMthdCn,
+              policy.etcMttrCn,
+              policy.operInstPicNm,
+              policy.sprvsnInstPicNm
             ]);
             totalInserted++;
           }
@@ -190,10 +241,23 @@ async function syncPolicies() {
 }
 
 function parseBizDate(dateStr) {
-  if (!dateStr || dateStr.length !== 8) return null;
-  const year = dateStr.substring(0, 4);
-  const month = dateStr.substring(4, 6);
-  const day = dateStr.substring(6, 8);
+  if (!dateStr) return null;
+
+  // Trim and check for valid format
+  const cleaned = dateStr.toString().trim();
+  if (cleaned.length !== 8) return null;
+
+  // Check if it's all digits
+  if (!/^\d{8}$/.test(cleaned)) return null;
+
+  const year = cleaned.substring(0, 4);
+  const month = cleaned.substring(4, 6);
+  const day = cleaned.substring(6, 8);
+
+  // Basic validation
+  if (parseInt(month) < 1 || parseInt(month) > 12) return null;
+  if (parseInt(day) < 1 || parseInt(day) > 31) return null;
+
   return `${year}-${month}-${day}`;
 }
 
